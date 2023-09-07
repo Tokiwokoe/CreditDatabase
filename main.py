@@ -6,7 +6,7 @@ from PyQt5.QtGui import QPainter, QColor
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import QApplication, QMainWindow, QTableWidgetItem, QGraphicsScene
 from PyQt5.QtChart import QChart, QChartView, QBarSeries, QBarSet, QBarCategoryAxis, QValueAxis
-from UIclass import LoginScreen, DeleteMessage, delete, main_window, Add, queries, graphics, add_worker, worker
+from UIclass import LoginScreen, DeleteMessage, delete, main_window, Add, queries, graphics, add_worker, worker, bank, client, credit, return_credit
 
 
 class AuthWindow(QMainWindow, LoginScreen.Ui_Auth):
@@ -37,12 +37,12 @@ class AuthWindow(QMainWindow, LoginScreen.Ui_Auth):
             elif self.role_group == 'bank_worker':
                 self.cursor.execute(f"SELECT departament FROM \"bank_worker\" WHERE login = '{self.user}'")
                 self.departament = self.cursor.fetchone()[0]
-                #self.bank_menu = BankMenu(self.connection, self.cursor, self.current_user, self.departament, self.role_group)
+                self.bank_menu = BankMenu(self.connection, self.cursor, self.current_user, self.departament, self.role_group)
                 self.bank_menu.show()
-            elif self.role_group == 'client':
-                self.cursor.execute(f"SELECT author_id FROM \"client_acc\" WHERE login = '{self.user}'")
+            elif self.role_group == 'client_acc':
+                self.cursor.execute(f"SELECT departament FROM \"client_acc\" WHERE login = '{self.user}'")
                 self.departament = self.cursor.fetchone()[0]
-                #self.client_menu = ClientMenu(self.connection, self.cursor, self.current_user, self.role_group, self.departament)
+                self.client_menu = ClientMenu(self.connection, self.cursor, self.current_user, self.role_group, self.departament)
                 self.client_menu.show()
             else:
                 self.error.setText('Такого пользователя нет')
@@ -335,6 +335,133 @@ class AddEmployees(QMainWindow, add_worker.Ui_Dialog):
         except Exception as err:
             print(err)
             self.error.setText('Ошибка!')
+
+
+class BankMenu(PrintTable, credit.Ui_Dialog):
+    def __init__(self, connection, cursor, current_user, departament, role_group):
+        super(BankMenu, self).__init__()
+        self.setupUi(self)
+        self.connection = connection
+        self.cursor = cursor
+        self.current_user = current_user
+        self.departament = departament
+        self.role_group = role_group
+        self.auth_as.setText(f'Вы вошли как: {self.current_user}, банк № {self.departament}')
+        self.Update_btn.clicked.connect(self.to_print_help_as_accountant)
+        self.Add_btn.clicked.connect(self.to_add_help)
+        self.Delete_btn.clicked.connect(self.to_delete)
+
+    def to_print_help_as_accountant(self):
+        query = f' SELECT client.name AS client, bank.name AS bank, credit_type.name AS credit_type, credit.sum, credit.year_percent, credit.date FROM credit LEFT JOIN credit_type ON credit_type.id = credit.credit_type LEFT JOIN client ON client.id = credit.client_id LEFT JOIN bank ON bank.id = credit.bank_id WHERE bank.id = {self.departament}'
+        self.labels = ['Клиент', 'Банк', 'Тип кредита', 'Сумма', 'Годовой процент', 'Дата']
+        self.to_print_table(query)
+
+    def to_delete(self):
+        self.delete = Delete(self.connection, self.cursor, self.role_group)
+        self.delete.show()
+
+    def to_add_help(self):
+        self.add = AddCredit(self.connection, self.cursor, self.departament)
+        self.add.show()
+
+
+class ClientMenu(PrintTable, client.Ui_Dialog):
+    def __init__(self, connection, cursor, current_user, role_group, departament):
+        super(ClientMenu, self).__init__()
+        self.setupUi(self)
+        self.connection = connection
+        self.cursor = cursor
+        self.current_user = current_user
+        self.dep = departament
+        self.role_group = role_group
+        query = f'SELECT name FROM client WHERE id = {self.dep}'
+        self.cursor.execute(query)
+        self.lastname = self.cursor.fetchone()
+        self.author = self.lastname[0].replace('(', '').replace(')', '').replace(' \'', '\'').split(',')
+        self.auth_as.setText(f'Вы вошли как: {current_user}, {self.author}')
+        self.Update_btn.clicked.connect(self.to_print_book_as_author)
+        self.Add_btn.clicked.connect(self.to_add_client)
+        self.Delete_btn.clicked.connect(self.to_delete)
+
+    def to_print_book_as_author(self):
+        query = f'SELECT client.name AS client, bank.name AS bank, return_credit.sum, return_credit.return_date FROM return_credit LEFT JOIN client ON client.id = return_credit.client_id LEFT JOIN bank ON bank.id = return_credit.bank_id WHERE client.id = {self.dep}'
+        self.labels = ['Клиент', 'Банк', 'Сумма возврата', 'Дата возврата']
+        self.to_print_table(query)
+
+    def to_delete(self):
+        self.delete = Delete(self.connection, self.cursor, self.role_group)
+        self.delete.show()
+
+    def to_add_client(self):
+        self.add = AddReturn(self.connection, self.cursor, self.dep)
+        self.add.show()
+
+
+class AddCredit(QMainWindow, bank.Ui_Dialog):
+    def __init__(self, connection, cursor, departament):
+        super(AddCredit, self).__init__()
+        self.setupUi(self)
+        self.connection = connection
+        self.cursor = cursor
+        self.departament = departament
+        query = 'SELECT id, name FROM client'
+        self.cursor.execute(query)
+        for t in self.cursor.fetchall():
+            self.client.addItem(str(t))
+        self.Add.clicked.connect(self.correct_data)
+
+    def correct_data(self):
+        sum = self.sum.text()
+        client = self.client.currentText().replace('(', '').replace(')', '').replace(' \'', '\'').split(',')
+        client_id = str(client[0])
+        percent = self.percent.text()
+        if int(sum) > 0:
+            try:
+                query = f"INSERT INTO credit VALUES({client_id}, {self.departament}, 1, {sum}, {percent}, '{datetime.date.today()}')"
+                self.cursor.execute(query)
+                self.connection.commit()
+                self.error.setText('Успешно добавлено')
+            except Exception as err:
+                print(err)
+                self.error.setText('Что-то пошло не так :(')
+        else:
+            self.error.setText('Проверьте корректность заполнения полей!')
+
+
+class AddReturn(QMainWindow, return_credit.Ui_Dialog):
+    def __init__(self, connection, cursor, departament):
+        super(AddReturn, self).__init__()
+        self.setupUi(self)
+        self.connection = connection
+        self.cursor = cursor
+        self.dep = departament
+        query = f'SELECT id, bank.name FROM credit LEFT JOIN bank ON bank.id = credit.bank_id WHERE credit.client_id = {self.dep}'
+        self.cursor.execute(query)
+        for t in self.cursor.fetchall():
+            self.credit.addItem(str(t))
+        self.Add.clicked.connect(self.correct_data)
+
+    def correct_data(self):
+        sum = self.sum.text()
+        if int(sum) > 0:
+            exemption = self.credit.currentText().replace('(', '').replace(')', '').replace(' \'', '\'').split(',')
+            exemption_id = str(exemption[0])
+            if exemption_id:
+                try:
+                    query = f'SELECT id FROM return_credit ORDER BY id DESC LIMIT 1'
+                    self.cursor.execute(query)
+                    self.name_id = self.cursor.fetchone()
+                    if not self.name_id:
+                        self.name_id = [0]
+                    query = f"INSERT INTO return_credit VALUES({int(self.name_id[0])+1}, {self.dep}, {exemption_id}, '{sum}', \'{datetime.date.today()}\')"
+                    self.cursor.execute(query)
+                    self.connection.commit()
+                    self.error.setText('Успешно добавлено')
+                except Exception as err:
+                    print(err)
+                    self.error.setText('Что-то пошло не так :(')
+            else:
+                self.error.setText('Проверьте корректность заполнения полей!')
 
 
 class Queries(QMainWindow, queries.Ui_Dialog):
