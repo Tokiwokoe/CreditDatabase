@@ -719,7 +719,7 @@ class Queries(QMainWindow, queries.Ui_Dialog):
             self.error.setText('Проверьте ввод!')
 
     def export_to_excel(self):
-        self.label = self.queries.currentText().split('. ')
+        self.label = self.queries.currentText()
         self.cursor = self.connection.cursor()
         book = openpyxl.Workbook()
         sheet = book.active
@@ -734,7 +734,7 @@ class Queries(QMainWindow, queries.Ui_Dialog):
                 cell.value = col
                 j += 1
         try:
-            book.save(f"{self.label[1]}.xlsx")
+            book.save(f"{self.label}.xlsx")
             self.error.setText('Успешно!')
         except Exception as err:
             print(err)
